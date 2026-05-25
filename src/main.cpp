@@ -38,8 +38,7 @@ int main() {
     myBlockchain.printChain();
 
     for (const auto& wallet : wallets) {
-        //wallet->printWalletData();
-        std::cout << "Wallet " << wallet->id << " has balance: " << wallet->balance << std::endl;
+        wallet->printWalletData();
     }
 
     return 0;
