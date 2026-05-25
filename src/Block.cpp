@@ -1,7 +1,7 @@
 #include "Block.h"
 #include <sstream>
 #include <iomanip>
-#include <openssl/sha.h>
+#include <openssl/evp.h>
 
 // Constructor to initialize a Block with given transactions, previous hash, and difficulty level.
 Block::Block(std::vector<Transaction> transactions, std::string prevHash, int difficulty) {
@@ -10,7 +10,7 @@ Block::Block(std::vector<Transaction> transactions, std::string prevHash, int di
     this->timestamp = std::time(nullptr);
     this->difficulty = difficulty;
     this->nonce = 0;
-    this->blockHash = mineBlock(); // Compute the block's hash
+    this->blockHash = mineBlock();
 }
 
 // Mining function to find a valid hash for the block based on the given difficulty
@@ -34,17 +34,21 @@ std::string Block::generateHash() const {
     return sha256(ss.str());
 }
 
-// Compute SHA-256 hash for a given string
+// Compute SHA-256 hash for a given string using the EVP API
 std::string Block::sha256(const std::string str) const {
-    unsigned char hash[SHA256_DIGEST_LENGTH];
-    SHA256_CTX sha256;
-    SHA256_Init(&sha256);
-    SHA256_Update(&sha256, str.c_str(), str.size());
-    SHA256_Final(hash, &sha256);
+    unsigned char hash[EVP_MAX_MD_SIZE];
+    unsigned int hashLen = 0;
+
+    EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+    EVP_DigestInit_ex(ctx, EVP_sha256(), nullptr);
+    EVP_DigestUpdate(ctx, str.c_str(), str.size());
+    EVP_DigestFinal_ex(ctx, hash, &hashLen);
+    EVP_MD_CTX_free(ctx);
 
     std::stringstream ss;
-    for (int i = 0; i < SHA256_DIGEST_LENGTH; i++) {
-        ss << std::hex << std::setw(2) << std::setfill('0') << (int)hash[i];
+    for (unsigned int i = 0; i < hashLen; i++) {
+        ss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(hash[i]);
     }
     return ss.str();
 }
+

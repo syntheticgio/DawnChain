@@ -1,90 +1,84 @@
 #include "Wallet.h"
-#include <iostream>  // Include iostream for std::cerr
-#include <openssl/rand.h>
+#include <iostream>
+#include <stdexcept>
+#include <openssl/evp.h>
+#include <openssl/rsa.h>
 #include <openssl/pem.h>
+#include <openssl/bio.h>
 
 // Constructor to initialize a Wallet with given ID
-
-Wallet::Wallet(std::string id) : id(id), balance(0.0f), publicKey(nullptr), privateKey(nullptr) {
+Wallet::Wallet(std::string id)
+    : id(id), balance(0.0f), publicKey(nullptr), privateKey(nullptr), txNonce(0) {
     generateKeys();
 }
 
-// Destructor to free RSA key pairs
-
-
+// Destructor to free EVP key pairs
 Wallet::~Wallet() {
-   if (privateKey) {
-    RSA_free(privateKey);
+    EVP_PKEY_free(privateKey);
     privateKey = nullptr;
-}
-if (publicKey) {
-    RSA_free(publicKey);
+    EVP_PKEY_free(publicKey);
     publicKey = nullptr;
 }
 
-}
-
-// Method to generate RSA key pairs
-
+// Method to generate a 2048-bit RSA key pair using the EVP API
 void Wallet::generateKeys() {
-    privateKey = RSA_new();
-    BIGNUM* exponent = BN_new();
-    BN_set_word(exponent, RSA_F4);  // Public exponent
-    RSA_generate_key_ex(privateKey, 2048, exponent, nullptr);
-    
-    // Create a new RSA object for the public key and set its fields
-    publicKey = RSA_new();
-    RSA_set0_key(publicKey, BN_dup(RSA_get0_n(privateKey)), BN_dup(exponent), nullptr);
-    
-    // Free the exponent as it is duplicated in publicKey and privateKey
-    BN_free(exponent);
+    EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, nullptr);
+    EVP_PKEY_keygen_init(ctx);
+    EVP_PKEY_CTX_set_rsa_keygen_bits(ctx, 2048);
 
-    char *publicKeyStr = nullptr;
-        BIO *bio = BIO_new(BIO_s_mem());
-        PEM_write_bio_RSAPublicKey(bio, publicKey);
-        size_t keylen = BIO_pending(bio);
-        publicKeyStr = (char*)malloc(keylen + 1);
-        BIO_read(bio, publicKeyStr, keylen);
-        publicKeyStr[keylen] = 0;
-        BIO_free_all(bio);
+    EVP_PKEY* pkey = nullptr;
+    EVP_PKEY_keygen(ctx, &pkey);
+    EVP_PKEY_CTX_free(ctx);
 
+    privateKey = pkey;
 
-        free(publicKeyStr); // Don't forget to free allocated memory
+    // Extract the public-only key by round-tripping through a BIO
+    BIO* bio = BIO_new(BIO_s_mem());
+    PEM_write_bio_PUBKEY(bio, pkey);
+    publicKey = PEM_read_bio_PUBKEY(bio, nullptr, nullptr, nullptr);
+    BIO_free_all(bio);
 }
 
 // Method to send funds to another wallet
-
 Transaction Wallet::sendFunds(Wallet& receiver, float amount) {
-    // Generate a nonce (for simplicity, this could be a random number)
-    int nonce = 12345;  // Replace with your nonce generation logic
+    if (balance < amount) {
+        throw std::runtime_error("Insufficient balance in wallet '" + id + "'");
+    }
 
+    int nonce = ++txNonce;  // Unique, ever-increasing nonce per wallet
     Transaction tx(id, receiver.id, amount, nonce);
-    tx.sign(privateKey);  // Sign the transaction
-    std::cout << privateKey << std::endl;
-
+    tx.sign(privateKey);
     return tx;
 }
-// Method to update balance based on the blockchain transactions
 
+// Method to update balance based on the blockchain transactions
 void Wallet::updateBalance(const std::vector<Transaction>& transactions) {
     for (const auto& tx : transactions) {
         if (tx.sender == id) {
             balance -= tx.amount;
         }
         if (tx.receiver == id) {
-                balance += tx.amount;
+            balance += tx.amount;
         }
     }
 }
+
 // Method to print wallet details
-
 void Wallet::printWalletData() const {
-    std::cout << "Wallet ID: " << id << std::endl;
-    std::cout << "Balance: " << balance << std::endl;
-    std::cout << "Public Key: " << publicKey << std::endl;
-    // You can add more fields to print as necessary,
-    // such as displaying a simplified form of the public key, etc.
+    std::cout << "Wallet ID: " << id << "\n";
+    std::cout << "Balance:   " << balance << "\n";
 
-    // Note: be careful about logging sensitive information such as private keys.
+    // Print the public key in PEM format
+    BIO* bio = BIO_new(BIO_s_mem());
+    if (bio && publicKey) {
+        PEM_write_bio_PUBKEY(bio, publicKey);
+        size_t keylen = BIO_pending(bio);
+        std::string keyStr(keylen, '\0');
+        BIO_read(bio, &keyStr[0], static_cast<int>(keylen));
+        BIO_free_all(bio);
+        std::cout << "Public Key:\n" << keyStr << "\n";
+    }
 }
+
+
 

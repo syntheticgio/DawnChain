@@ -4,11 +4,22 @@ CXX = g++
 # Compiler Flags
 CXXFLAGS = -std=c++11 -Wall -Wextra
 
+# OpenSSL: use pkg-config when available, fall back to Homebrew on macOS
+OPENSSL_CFLAGS := $(shell pkg-config --cflags openssl 2>/dev/null)
+OPENSSL_LIBS   := $(shell pkg-config --libs openssl 2>/dev/null)
+
+ifeq ($(strip $(OPENSSL_LIBS)),)
+  # pkg-config not available or OpenSSL not found — try common Homebrew path
+  OPENSSL_PREFIX ?= /opt/homebrew/opt/openssl
+  OPENSSL_CFLAGS  = -I$(OPENSSL_PREFIX)/include
+  OPENSSL_LIBS    = -L$(OPENSSL_PREFIX)/lib -lssl -lcrypto
+endif
+
 # Include directories
-INCLUDES = -Isrc/ -I/opt/homebrew/Cellar/openssl@1.1/1.1.1u/include/
+INCLUDES = -Isrc/ $(OPENSSL_CFLAGS)
 
 # Libraries
-LIBS = -L/opt/homebrew/Cellar/openssl@3/3.1.2/lib/ -lssl -lcrypto
+LIBS = $(OPENSSL_LIBS)
 
 # Source Files
 SRC_DIR = src

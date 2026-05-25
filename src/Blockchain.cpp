@@ -1,4 +1,5 @@
 #include "Blockchain.h"
+#include "SmartContract.h"
 #include "Wallet.h"
 #include <iostream>
 
@@ -10,14 +11,34 @@ Blockchain::Blockchain() {
 
 // Create a transaction and add it to the list of pending transactions
 void Blockchain::createTransaction(Transaction transaction) {
+    if (!isTransactionValid(transaction)) {
+        std::cerr << "Transaction rejected: invalid amount or nonce.\n";
+        return;
+    }
     pendingTransactions.push_back(transaction);
 }
 
-// Mine pending transactions into a new block and add it to the blockchain
+// Mine pending transactions into a new block and add it to the blockchain.
+// Any registered smart contracts are executed first; transactions that fail
+// a contract are dropped before the block is sealed.
 void Blockchain::minePendingTransactions() {
-    Block newBlock(pendingTransactions, chain.back().blockHash, 2);
+    std::vector<Transaction> validTx;
+    for (const auto& tx : pendingTransactions) {
+        bool passed = true;
+        for (auto& kv : contracts) {
+            if (!kv.second->execute(tx)) {
+                std::cerr << "Transaction dropped by contract '" << kv.first << "'.\n";
+                passed = false;
+                break;
+            }
+        }
+        if (passed) {
+            validTx.push_back(tx);
+        }
+    }
+    Block newBlock(validTx, chain.back().blockHash, 2);
     chain.push_back(newBlock);
-    pendingTransactions.clear();  // Clear pending transactions
+    pendingTransactions.clear();
 }
 
 // Check if a block's hash is valid
@@ -27,14 +48,14 @@ bool Blockchain::isBlockHashValid(const Block& block) {
 
 // Check if a transaction is valid
 bool Blockchain::isTransactionValid(const Transaction& tx) {
-    return tx.amount > 0;
+    return tx.amount > 0 && tx.nonce >= 0;
 }
 
 // Check the validity of the entire blockchain
 bool Blockchain::isChainValid() {
-    for (int i = 1; i < chain.size(); ++i) {
-        Block currBlock = chain[i];
-        Block prevBlock = chain[i - 1];
+    for (size_t i = 1; i < chain.size(); ++i) {
+        const Block& currBlock = chain[i];
+        const Block& prevBlock = chain[i - 1];
 
         if (!isBlockHashValid(currBlock)) {
             return false;
@@ -45,8 +66,12 @@ bool Blockchain::isChainValid() {
         }
 
         for (const auto& tx : currBlock.transactions) {
-            RSA* publicKey = publicKeyMap[tx.sender];  // Retrieve publicKey based on tx.sender
-            if (!tx.isValid(publicKey)) {
+            auto it = publicKeyMap.find(tx.sender);
+            if (it == publicKeyMap.end() || it->second == nullptr) {
+                std::cerr << "No public key found for sender: " << tx.sender << "\n";
+                return false;
+            }
+            if (!tx.isValid(it->second)) {
                 return false;
             }
         }
@@ -66,7 +91,7 @@ void Blockchain::printChain() {
             std::cout << "  Sender: " << tx.sender << " Receiver: " << tx.receiver << " Amount: " << tx.amount << std::endl;
         }
 
-        std::cout << "Nonce: " << block.nonce << std::endl;  // Display the nonce
+        std::cout << "Nonce: " << block.nonce << std::endl;
         std::cout << std::endl;
     }
 }
@@ -80,3 +105,11 @@ void Blockchain::notifyWallets(std::vector<Wallet*>& wallets) {
         }
     }
 }
+
+// Register a smart contract with the blockchain
+void Blockchain::registerContract(SmartContract* contract) {
+    if (contract) {
+        contracts[contract->getContractId()] = contract;
+    }
+}
+

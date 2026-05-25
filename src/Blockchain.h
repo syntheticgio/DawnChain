@@ -1,14 +1,18 @@
 #pragma once
 #include <vector>
+#include <unordered_map>
 #include "Block.h"
 #include "Transaction.h"
 #include "Wallet.h"
+#include "SmartContract.h"
+#include <openssl/evp.h>
 
 class Blockchain {
 private:
     std::vector<Block> chain;  // Blockchain consisting of blocks
     std::vector<Transaction> pendingTransactions;  // Transactions waiting to be added to a block
-    std::unordered_map<std::string, RSA*> publicKeyMap;  // Map of wallet IDs to their public keys
+    std::unordered_map<std::string, EVP_PKEY*> publicKeyMap;  // Map of wallet IDs to their public keys
+    std::unordered_map<std::string, SmartContract*> contracts;  // Registered smart contracts
 
 public:
     // Constructor to initialize blockchain with genesis block
@@ -34,4 +38,7 @@ public:
 
     // Method to notify all wallets about the state of the blockchain
     void notifyWallets(std::vector<Wallet*>& wallets);
+
+    // Method to register a smart contract with the blockchain
+    void registerContract(SmartContract* contract);
 };
